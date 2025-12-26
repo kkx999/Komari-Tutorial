@@ -63,11 +63,9 @@ worker_processes  1;
 
 #pid        logs/nginx.pid;
 
-
 events {
     worker_connections  1024;
 }
-
 
 http {
     include       mime.types;
@@ -82,55 +80,54 @@ http {
     sendfile        on;
     #tcp_nopush     on;
 
-    #keepalive_timeout  0;
     keepalive_timeout  65;
 
     #gzip  on;
 
-    server
-{
-    #listen [::]:80;   #监听端口 IPv6
-    #listen [::]:443 ssl;    #监听端口 带SSL iPv6
-    listen 80; #ipv4
-    listen 443 ssl;  #ipv4
-    server_name xxxxxx.com; #填写监控网站域名
-    index index.php index.html index.htm default.php default.htm default.html;
-    root /home/web/nezha;
-    #index root部分随便写 没用的
-    
-    #SSL-START SSL相关配置，请勿删除或修改下一行带注释的404规则
-    #error_page 404/404.html;
-    ssl_certificate    /root/cert.crt;   #SSL证书文件
-    ssl_certificate_key    /root/private.key;  #SSL密钥文件
-    ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
-    ssl_ciphers EECDH+CHACHA20:EECDH+CHACHA20-draft:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5;
-    ssl_prefer_server_ciphers on;
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
-    add_header Strict-Transport-Security "max-age=31536000";
-    error_page 497  https://$host$request_uri;
- 
-#以下是反代内容 如果有特别设置端口记得修改 
-   
-location / {
-    proxy_pass http://127.0.0.1:8008;
-    proxy_set_header Host $host;
-    proxy_set_header Origin https://$host;
-    proxy_set_header nz-realip $http_CF_Connecting_IP;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection 'upgrade';
-}
-location ~ ^/(ws|terminal/.+|file/.+)$ {
-    proxy_pass http://127.0.0.1:8008;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "Upgrade";
-    proxy_set_header Host $http_host;
-}
-}
+    # 新增：允许最大的请求体大小为 100M（根据需要可调整）
+    client_max_body_size 100M;
+
+    server {
+        listen 80;
+        listen 443 ssl;
+        server_name 88888888.xyz;
+
+        index index.php index.html index.htm default.php default.htm default.html;
+        root /home/web/nezha;
+
+        # SSL 配置
+        ssl_certificate    /root/cert.crt;
+        ssl_certificate_key    /root/private.key;
+        ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
+        ssl_ciphers EECDH+CHACHA20:EECDH+CHACHA20-draft:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5;
+        ssl_prefer_server_ciphers on;
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 10m;
+        add_header Strict-Transport-Security "max-age=31536000";
+        error_page 497  https://$host$request_uri;
+
+        # 主反向代理
+        location / {
+            proxy_pass http://127.0.0.1:8888;
+            proxy_set_header Host $host;
+            proxy_set_header Origin https://$host;
+            proxy_set_header nz-realip $http_CF_Connecting_IP;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+        }
+
+        # WebSocket 和特定路径反代
+        location ~ ^/(ws|terminal/.+|file/.+)$ {
+            proxy_pass http://127.0.0.1:8008;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "Upgrade";
+            proxy_set_header Host $host;
+        }
+    }
 }
 ```
 重启nginx
