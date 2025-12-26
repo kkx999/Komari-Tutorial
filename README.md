@@ -1,10 +1,10 @@
-# 哪吒监控面板v1搭建教程
+# Komari监控面板搭建教程
 
 教程参考来源
 
-[哪吒wiki](https://github.com/Chasing66)
+[Komari 文档](https://komari-document.pages.dev/)
 
-[JollyRoger blog](https://jollyroger.top/sites/320.html)
+[Komari Github](https://github.com/komari-monitor/komari)
 
 [全国ICMP Ping监控节点地址分享](https://www.nodeseek.com/post-82748-1)
 
@@ -16,14 +16,12 @@ apt install -y curl wget sudo unzip
 apt install -y socat
 ```
 
-# 第二步（安装 哪吒Dashboard）
+# 第二步（安装 Komari面板）
 运行以下安装脚本
 ```
-curl -L https://raw.githubusercontent.com/nezhahq/scripts/refs/heads/main/install.sh -o nezha.sh && chmod +x nezha.sh && sudo ./nezha.sh
-```
-如果你的服务器位于中国大陆，可以使用镜像
-```
-curl -L https://gitee.com/naibahq/scripts/raw/main/install.sh -o nezha.sh && chmod +x nezha.sh && sudo CN=true ./nezha.sh
+curl -fsSL https://raw.githubusercontent.com/komari-monitor/komari/main/install-komari.sh -o install-komari.sh
+chmod +x install-komari.sh
+sudo ./install-komari.sh
 ```
 # 第三步（绑定[cloudflare](https://cloudflare.com)可以开启CDN）
 # 第四步（利用闲置80端口申请网站证书）
@@ -87,6 +85,7 @@ http {
     # 新增：允许最大的请求体大小为 100M（根据需要可调整）
     client_max_body_size 100M;
 
+    # 修改server_name后面域名改成你自己的
     server {
         listen 80;
         listen 443 ssl;
@@ -106,7 +105,7 @@ http {
         add_header Strict-Transport-Security "max-age=31536000";
         error_page 497  https://$host$request_uri;
 
-        # 主反向代理
+        # 主反向代理（修改proxy_pass后面端口改为你自己设置的）
         location / {
             proxy_pass http://127.0.0.1:8888;
             proxy_set_header Host $host;
@@ -118,15 +117,6 @@ http {
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection 'upgrade';
         }
-
-        # WebSocket 和特定路径反代
-        location ~ ^/(ws|terminal/.+|file/.+)$ {
-            proxy_pass http://127.0.0.1:8008;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "Upgrade";
-            proxy_set_header Host $host;
-        }
     }
 }
 ```
@@ -134,5 +124,3 @@ http {
 ```
 systemctl restart nginx && systemctl status nginx
 ```
-# 第七步
-直接访问域名，添加你的被控机器，其他哪吒相关操作，参考[哪吒wiki](https://github.com/Chasing66)
