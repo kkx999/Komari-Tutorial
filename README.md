@@ -92,7 +92,7 @@ http {
         server_name 88888888.xyz;
 
         index index.php index.html index.htm default.php default.htm default.html;
-        root /home/web/nezha;
+        root /home/web/Komari;
 
         # SSL 配置
         ssl_certificate    /root/cert.crt;
