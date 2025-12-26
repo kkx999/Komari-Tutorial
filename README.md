@@ -52,60 +52,39 @@ apt install -y nginx
 cd /etc/nginx/nginx.conf
 ```
 ```
-#user  nobody;
-worker_processes  1;
-
-#error_log  logs/error.log;
-#error_log  logs/error.log  notice;
-#error_log  logs/error.log  info;
-
-#pid        logs/nginx.pid;
+#user nobody;
+worker_processes 1;
 
 events {
-    worker_connections  1024;
+    worker_connections 1024;
 }
 
 http {
-    include       mime.types;
-    default_type  application/octet-stream;
+    include mime.types;
+    default_type application/octet-stream;
 
-    #log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
-    #                  '$status $body_bytes_sent "$http_referer" '
-    #                  '"$http_user_agent" "$http_x_forwarded_for"';
+    sendfile on;
+    keepalive_timeout 65;
 
-    #access_log  logs/access.log  main;
-
-    sendfile        on;
-    #tcp_nopush     on;
-
-    keepalive_timeout  65;
-
-    #gzip  on;
-
-    # 新增：允许最大的请求体大小为 100M（根据需要可调整）
     client_max_body_size 100M;
 
-    # 修改server_name后面域名改成你自己的
     server {
         listen 80;
         listen 443 ssl;
-        server_name 88888888.xyz;
+        server_name 2221688.xyz;
 
-        index index.php index.html index.htm default.php default.htm default.html;
-        root /home/web/Komari;
-
-        # SSL 配置
-        ssl_certificate    /root/cert.crt;
-        ssl_certificate_key    /root/private.key;
-        ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
-        ssl_ciphers EECDH+CHACHA20:EECDH+CHACHA20-draft:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5;
+        # SSL 配置（优化后）
+        ssl_certificate /root/cert.crt;
+        ssl_certificate_key /root/private.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
         ssl_prefer_server_ciphers on;
         ssl_session_cache shared:SSL:10m;
         ssl_session_timeout 10m;
         add_header Strict-Transport-Security "max-age=31536000";
-        error_page 497  https://$host$request_uri;
+        error_page 497 https://$host$request_uri;
 
-        # 主反向代理（修改proxy_pass后面端口改为你自己设置的）
+        # 主反向代理
         location / {
             proxy_pass http://127.0.0.1:8888;
             proxy_set_header Host $host;
