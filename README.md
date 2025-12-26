@@ -68,10 +68,11 @@ http {
 
     client_max_body_size 100M;
 
+        #修改server_name后面域名改自己的
     server {
         listen 80;
         listen 443 ssl;
-        server_name 2221688.xyz;
+        server_name 888888.xyz;
 
         # SSL 配置（优化后）
         ssl_certificate /root/cert.crt;
@@ -84,7 +85,7 @@ http {
         add_header Strict-Transport-Security "max-age=31536000";
         error_page 497 https://$host$request_uri;
 
-        # 主反向代理
+        # 主反向代理（修改proxy_pass后面端口改你自己的）
         location / {
             proxy_pass http://127.0.0.1:8888;
             proxy_set_header Host $host;
