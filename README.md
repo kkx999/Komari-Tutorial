@@ -124,3 +124,11 @@ http {
 ```
 systemctl restart nginx && systemctl status nginx
 ```
+检查配置
+```
+nginx -t
+```
+重载生效
+```
+nginx -s reload
+```
