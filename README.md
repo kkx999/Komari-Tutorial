@@ -1,114 +1,153 @@
 # Komari监控面板搭建教程
 
-教程参考来源
-
 [Komari 文档](https://komari-document.pages.dev/)
 
-[Komari Github](https://github.com/komari-monitor/komari)
 
 [全国ICMP Ping监控节点地址分享](https://www.nodeseek.com/post-82748-1)
 
-# 第一步（安装依赖文件）
-```
-apt install -y curl wget sudo unzip
-```
-```
-apt install -y socat
+# Komari 部署教程
+
+## 第一步：安装 Komari
+
+```bash
+cd /root && curl -fsSL https://raw.githubusercontent.com/komari-monitor/komari/main/install-komari.sh -o install-komari.sh && chmod +x install-komari.sh && ./install-komari.sh
 ```
 
-# 第二步（安装 Komari面板）
-运行以下安装脚本
-```
-curl -fsSL https://raw.githubusercontent.com/komari-monitor/komari/main/install-komari.sh -o install-komari.sh
-chmod +x install-komari.sh
-sudo ./install-komari.sh
-```
-# 第三步（绑定[cloudflare](https://cloudflare.com)可以开启CDN）
-# 第四步（利用闲置80端口申请网站证书）
+选择：
 
-安装 Acme 脚本
-```
-curl https://get.acme.sh | sh
-```
-自行更换代码中的域名、邮箱为你解析的域名及邮箱
-```
-~/.acme.sh/acme.sh --register-account -m xxxx@xxxx.com
-```
-```
-~/.acme.sh/acme.sh  --issue -d xxxxxxx.com   --standalone
-```
-安装证书到指定文件夹，自行更换代码中的域名为你解析的域名
-```
-~/.acme.sh/acme.sh --installcert -d xxxxxxx.com --key-file /root/private.key --fullchain-file /root/cert.crt
+```text
+1. 安装 Komari
 ```
 
-# 第五步（安装nginx）
+Komari 默认端口：
+
+```text
+25774
 ```
-apt install -y nginx
+
+---
+
+## 第二步：安装 Nginx
+
+```bash
+apt update && apt install -y nginx curl cron && systemctl enable --now nginx cron
 ```
-# 第六步（编辑nginx文件）
-打开nginx.conf文件，清空所有配置，粘贴第二步内容，只需要更改 xxxxxx.com; #填写监控网站域名 填写你自己绑定的域名
+
+---
+
+## 第三步：绑定 Komari 域名
+
+把：
+
+```text
+你的Komari域名
 ```
-cd /etc/nginx/nginx.conf
-```
-```
-#user nobody;
-worker_processes 1;
 
-events {
-    worker_connections 1024;
-}
+修改成自己的域名，然后整段执行：
 
-http {
-    include mime.types;
-    default_type application/octet-stream;
+```bash
+DOMAIN="你的Komari域名"
 
-    sendfile on;
-    keepalive_timeout 65;
+cat > /etc/nginx/conf.d/komari.conf <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
 
-    client_max_body_size 100M;
-
-        #修改server_name后面域名改自己的
-    server {
-        listen 80;
-        listen 443 ssl;
-        server_name 888888.xyz;
-
-        # SSL 配置（优化后）
-        ssl_certificate /root/cert.crt;
-        ssl_certificate_key /root/private.key;
-        ssl_protocols TLSv1.2 TLSv1.3;
-        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
-        ssl_prefer_server_ciphers on;
-        ssl_session_cache shared:SSL:10m;
-        ssl_session_timeout 10m;
-        add_header Strict-Transport-Security "max-age=31536000";
-        error_page 497 https://$host$request_uri;
-
-        # 主反向代理（修改proxy_pass后面端口改你自己的）
-        location / {
-            proxy_pass http://127.0.0.1:8888;
-            proxy_set_header Host $host;
-            proxy_set_header Origin https://$host;
-            proxy_set_header nz-realip $http_CF_Connecting_IP;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-        }
+    location / {
+        proxy_pass http://127.0.0.1:25774;
     }
 }
+EOF
+
+nginx -t && systemctl reload nginx
 ```
-重启nginx
+
+---
+
+## 第四步：申请 SSL 证书
+
+把域名和邮箱修改成自己的，然后整段执行：
+
+```bash
+DOMAIN="你的Komari域名"
+EMAIL="你的邮箱"
+
+curl https://get.acme.sh | sh -s email="$EMAIL" && \
+mkdir -p /etc/nginx/ssl/komari && \
+/root/.acme.sh/acme.sh --set-default-ca --server letsencrypt && \
+/root/.acme.sh/acme.sh --issue --nginx -d "$DOMAIN" && \
+/root/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+  --key-file /etc/nginx/ssl/komari/private.key \
+  --fullchain-file /etc/nginx/ssl/komari/fullchain.cer \
+  --reloadcmd "systemctl reload nginx"
 ```
-systemctl restart nginx && systemctl status nginx
+
+证书会自动续期。
+
+---
+
+## 第五步：开启 HTTPS
+
+把域名修改成自己的，然后整段执行：
+
+```bash
+DOMAIN="你的Komari域名"
+
+cat > /etc/nginx/conf.d/komari.conf <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name $DOMAIN;
+
+    ssl_certificate /etc/nginx/ssl/komari/fullchain.cer;
+    ssl_certificate_key /etc/nginx/ssl/komari/private.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:25774;
+
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "Upgrade";
+
+        proxy_buffering off;
+    }
+}
+EOF
+
+nginx -t && systemctl reload nginx
 ```
-检查配置
+
+---
+
+## 第六步：访问 Komari
+
+打开：
+
+```text
+https://你的Komari域名
 ```
-nginx -t
+
+完成。
+
+Komari 的独立 Nginx 配置：
+
+```text
+/etc/nginx/conf.d/komari.conf
 ```
-重载生效
-```
-nginx -s reload
+
+不会修改：
+
+```text
+/etc/nginx/nginx.conf
 ```
