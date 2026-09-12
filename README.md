@@ -151,3 +151,61 @@ Komari 的独立 Nginx 配置：
 ```text
 /etc/nginx/nginx.conf
 ```
+
+---
+
+# Komari 数据备份与恢复
+
+如果需要重装 VPS，但希望保留 Komari 当前已经添加的监控机器、机器名称、UUID、Token 等信息，可以备份 `komari.db`。
+
+> 此方法主要保留 Komari 主数据库中的机器和配置数据，不包含 `metrics.db` 中的历史监控曲线数据。
+
+## 重装 VPS 前：备份数据库
+
+执行：
+
+```bash
+systemctl stop komari
+
+cp /opt/komari/data/komari.db /root/komari.db
+
+systemctl start komari
+```
+
+备份完成后，数据库文件位于：
+
+```text
+/root/komari.db
+```
+
+请务必在重装 VPS 前把 `komari.db` 下载到自己的电脑保存，否则重装系统后该文件也会被删除。
+
+---
+
+## 重装 VPS 后：恢复数据库
+
+先按照本教程重新部署好 Komari，然后把之前备份的 `komari.db` 上传到：
+
+```text
+/root/komari.db
+```
+
+再执行：
+
+```bash
+systemctl stop komari
+
+cp /root/komari.db /opt/komari/data/komari.db
+
+chmod 644 /opt/komari/data/komari.db
+
+systemctl start komari
+```
+
+恢复完成后，可以检查 Komari 服务状态：
+
+```bash
+systemctl status komari
+```
+
+如果服务正常启动，之前已经添加的监控机器会重新出现在 Komari 中，通常无需重新安装 Agent 或重新添加机器。
