@@ -36,7 +36,7 @@ apt update && apt install -y nginx curl cron && systemctl enable --now nginx cro
 
 ## 第三步：一键配置域名 + SSL + HTTPS
 
-先把自己的 Komari 域名解析到当前 VPS 公网 IP，并确保公网可以访问 `80` 和 `443` 端口。
+先把自己的 Komari 域名解析到当前 VPS 公网 IP。
 
 然后执行：
 
@@ -44,30 +44,94 @@ apt update && apt install -y nginx curl cron && systemctl enable --now nginx cro
 bash <(curl -fsSL https://raw.githubusercontent.com/kkx999/Komari-Tutorial/main/setup-https.sh)
 ```
 
-脚本运行后只需要输入：
+脚本首先需要输入：
 
 ```text
 Komari 域名
-邮箱
+用于申请 SSL 证书的邮箱
 ```
 
-例如：
+然后可以选择两种证书验证方式：
 
 ```text
-请输入 Komari 域名（例如 monitor.example.com）: monitor.example.com
-请输入用于申请 SSL 证书的邮箱: example@example.com
+1. HTTP 验证
+2. Cloudflare DNS 验证
 ```
 
-脚本会自动完成：
+### 方式一：HTTP 验证
+
+适合 VPS 的公网 80 端口可以正常访问的情况。
+
+选择：
+
+```text
+1. HTTP 验证（需要公网 80 端口可访问）
+```
+
+脚本会使用 acme.sh 的 Nginx HTTP 验证方式自动申请 Let's Encrypt 证书。
+
+要求：
+
+```text
+域名已经解析到当前 VPS
+TCP 80 可以从公网访问
+TCP 443 用于最终 HTTPS 访问
+```
+
+### 方式二：Cloudflare DNS 验证
+
+如果域名 DNS 托管在 Cloudflare，可以选择：
+
+```text
+2. Cloudflare DNS 验证（不需要开放 80 端口）
+```
+
+这种方式通过 Cloudflare DNS API 自动创建 `_acme-challenge` TXT 记录完成验证，申请证书时不需要公网开放 80 端口。
+
+Cloudflare 凭据支持两种方式：
+
+```text
+1. API Token（推荐）
+2. Global API Key
+```
+
+#### Cloudflare API Token（推荐）
+
+需要准备：
+
+```text
+Cloudflare Account ID
+Cloudflare API Token
+```
+
+建议创建只用于 DNS 验证的受限 API Token，不要直接使用权限过大的 Token。
+
+脚本输入 API Token 时不会在终端显示 Token 内容。
+
+#### Cloudflare Global API Key
+
+也兼容传统 Global API Key，需要准备：
+
+```text
+Cloudflare 登录邮箱
+Cloudflare Global API Key
+```
+
+Global API Key 权限较大，优先推荐使用 API Token。
+
+Cloudflare 凭据会由 acme.sh 保存，用于后续自动续期证书，请注意保护 `/root/.acme.sh/` 目录。
+
+### 脚本会自动完成
 
 1. 创建 Komari 的 Nginx 反向代理配置
-2. 安装 acme.sh
-3. 使用 Let's Encrypt 申请 SSL 证书
-4. 安装 SSL 证书
-5. 自动开启 HTTPS
-6. 配置 HTTP 自动跳转 HTTPS
-7. 配置 WebSocket 反向代理
-8. 重载 Nginx
+2. 安装或检查 acme.sh
+3. 根据选择使用 HTTP 或 Cloudflare DNS 验证
+4. 使用 Let's Encrypt 申请 SSL 证书
+5. 安装 SSL 证书
+6. 自动开启 HTTPS
+7. 配置 HTTP 自动跳转 HTTPS
+8. 配置 WebSocket 反向代理
+9. 重载 Nginx
 
 SSL 证书会由 acme.sh 自动续期。
 
