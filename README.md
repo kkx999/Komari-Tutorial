@@ -97,14 +97,26 @@ Cloudflare 凭据支持两种方式：
 
 #### Cloudflare API Token（推荐）
 
-需要准备：
+只需要准备：
 
 ```text
-Cloudflare Account ID
 Cloudflare API Token
 ```
 
-建议创建只用于 DNS 验证的受限 API Token，不要直接使用权限过大的 Token。
+不需要手动填写 Account ID。acme.sh 会通过 API Token 自动查找域名对应的 Cloudflare Zone。
+
+建议给 Token 只开放以下权限：
+
+```text
+Zone → DNS → Edit
+Zone → Zone → Read
+```
+
+Zone Resources 建议限制为：
+
+```text
+Include → Specific zone → 你的域名
+```
 
 脚本输入 API Token 时不会在终端显示 Token 内容。
 
