@@ -20,7 +20,6 @@ fi
 read -rp "请输入 Komari 域名（例如 monitor.example.com）: " DOMAIN
 read -rp "请输入用于申请 SSL 证书的邮箱: " EMAIL
 
-# 自动去掉用户误输入的协议、路径和末尾斜杠。
 DOMAIN="${DOMAIN#http://}"
 DOMAIN="${DOMAIN#https://}"
 DOMAIN="${DOMAIN%%/*}"
@@ -36,14 +35,34 @@ if [[ ! "${EMAIL}" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; then
     exit 1
 fi
 
+echo
+echo "请选择 SSL 证书验证方式："
+echo "1. HTTP 验证（需要公网 80 端口可访问）"
+echo "2. Cloudflare DNS 验证（不需要开放 80 端口）"
+read -rp "请选择 [1-2]：" VERIFY_METHOD
+
+case "${VERIFY_METHOD}" in
+    1)
+        VERIFY_NAME="HTTP"
+        ;;
+    2)
+        VERIFY_NAME="Cloudflare DNS"
+        ;;
+    *)
+        echo "错误：请选择 1 或 2。"
+        exit 1
+        ;;
+esac
+
 if [[ -f "${NGINX_CONF}" ]]; then
     BACKUP_FILE="${NGINX_CONF}.bak.$(date +%Y%m%d%H%M%S)"
     cp -a "${NGINX_CONF}" "${BACKUP_FILE}"
     echo "已备份原 Nginx 配置：${BACKUP_FILE}"
 fi
 
+# 先写入 HTTP 反向代理配置。HTTP 验证需要它；DNS 验证下也可以用于后续 80 -> 443 跳转切换前的基础配置。
 echo
- echo "[1/4] 配置 Komari HTTP 反向代理..."
+echo "[1/5] 配置 Komari HTTP 反向代理..."
 cat > "${NGINX_CONF}" <<EOF
 server {
     listen 80;
@@ -71,7 +90,7 @@ nginx -t
 systemctl reload nginx
 
 echo
- echo "[2/4] 安装或检查 acme.sh..."
+echo "[2/5] 安装或检查 acme.sh..."
 if [[ ! -x "${ACME_SH}" ]]; then
     curl -fsSL https://get.acme.sh | sh -s email="${EMAIL}"
 fi
@@ -84,19 +103,76 @@ fi
 "${ACME_SH}" --set-default-ca --server letsencrypt
 
 echo
- echo "[3/4] 为 ${DOMAIN} 申请 SSL 证书..."
-set +e
-"${ACME_SH}" --issue --nginx -d "${DOMAIN}"
-ACME_RC=$?
-set -e
+echo "[3/5] 使用 ${VERIFY_NAME} 验证申请证书..."
 
-# acme.sh 在已有有效证书、无需重新签发时可能返回 2，可继续安装证书。
+if [[ "${VERIFY_METHOD}" == "1" ]]; then
+    echo "请确认 ${DOMAIN} 已解析到本机公网 IP，并且公网 80 端口可以访问。"
+
+    set +e
+    "${ACME_SH}" --issue --nginx -d "${DOMAIN}"
+    ACME_RC=$?
+    set -e
+else
+    echo
+echo "Cloudflare 凭据方式："
+    echo "1. API Token（推荐）"
+    echo "2. Global API Key"
+    read -rp "请选择 [1-2]：" CF_METHOD
+
+    case "${CF_METHOD}" in
+        1)
+            read -rp "请输入 Cloudflare Account ID：" CF_ACCOUNT_ID_INPUT
+            read -rsp "请输入 Cloudflare API Token：" CF_TOKEN_INPUT
+            echo
+
+            if [[ -z "${CF_ACCOUNT_ID_INPUT}" || -z "${CF_TOKEN_INPUT}" ]]; then
+                echo "错误：Cloudflare Account ID 和 API Token 不能为空。"
+                exit 1
+            fi
+
+            export CF_Account_ID="${CF_ACCOUNT_ID_INPUT}"
+            export CF_Token="${CF_TOKEN_INPUT}"
+            unset CF_Key CF_Email 2>/dev/null || true
+            ;;
+        2)
+            read -rp "请输入 Cloudflare 登录邮箱：" CF_EMAIL_INPUT
+            read -rsp "请输入 Cloudflare Global API Key：" CF_KEY_INPUT
+            echo
+
+            if [[ ! "${CF_EMAIL_INPUT}" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || [[ -z "${CF_KEY_INPUT}" ]]; then
+                echo "错误：Cloudflare 登录邮箱或 Global API Key 无效。"
+                exit 1
+            fi
+
+            export CF_Email="${CF_EMAIL_INPUT}"
+            export CF_Key="${CF_KEY_INPUT}"
+            unset CF_Token CF_Account_ID CF_Zone_ID 2>/dev/null || true
+            ;;
+        *)
+            echo "错误：请选择 1 或 2。"
+            exit 1
+            ;;
+    esac
+
+    set +e
+    "${ACME_SH}" --issue --dns dns_cf -d "${DOMAIN}"
+    ACME_RC=$?
+    set -e
+fi
+
+# acme.sh 在证书仍有效、无需重新签发时可能返回 2，此时仍尝试安装已有证书。
 if [[ "${ACME_RC}" -ne 0 && "${ACME_RC}" -ne 2 ]]; then
     echo "错误：SSL 证书申请失败。"
-    echo "请确认域名已经解析到本机公网 IP，并且 80 端口可以从公网访问。"
+    if [[ "${VERIFY_METHOD}" == "1" ]]; then
+        echo "请检查域名解析以及公网 80 端口。"
+    else
+        echo "请检查域名是否托管在 Cloudflare，以及 API Token / Global API Key 权限是否正确。"
+    fi
     exit "${ACME_RC}"
 fi
 
+echo
+echo "[4/5] 安装 SSL 证书..."
 mkdir -p "${SSL_DIR}"
 "${ACME_SH}" --install-cert -d "${DOMAIN}" \
     --key-file "${SSL_DIR}/private.key" \
@@ -106,7 +182,7 @@ mkdir -p "${SSL_DIR}"
 chmod 600 "${SSL_DIR}/private.key"
 
 echo
- echo "[4/4] 开启 HTTPS..."
+echo "[5/5] 开启 HTTPS..."
 cat > "${NGINX_CONF}" <<EOF
 server {
     listen 80;
@@ -147,6 +223,7 @@ systemctl reload nginx
 echo
 echo "=============================================="
 echo "Komari 域名和 HTTPS 配置完成"
+echo "验证方式：${VERIFY_NAME}"
 echo "访问地址：https://${DOMAIN}"
 echo "SSL 证书将由 acme.sh 自动续期"
 echo "=============================================="
