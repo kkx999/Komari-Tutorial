@@ -60,7 +60,6 @@ if [[ -f "${NGINX_CONF}" ]]; then
     echo "已备份原 Nginx 配置：${BACKUP_FILE}"
 fi
 
-# 先写入 HTTP 反向代理配置。HTTP 验证需要它；DNS 验证下也可以用于后续 80 -> 443 跳转切换前的基础配置。
 echo
 echo "[1/5] 配置 Komari HTTP 反向代理..."
 cat > "${NGINX_CONF}" <<EOF
@@ -114,25 +113,23 @@ if [[ "${VERIFY_METHOD}" == "1" ]]; then
     set -e
 else
     echo
-echo "Cloudflare 凭据方式："
+    echo "Cloudflare 凭据方式："
     echo "1. API Token（推荐）"
     echo "2. Global API Key"
     read -rp "请选择 [1-2]：" CF_METHOD
 
     case "${CF_METHOD}" in
         1)
-            read -rp "请输入 Cloudflare Account ID：" CF_ACCOUNT_ID_INPUT
             read -rsp "请输入 Cloudflare API Token：" CF_TOKEN_INPUT
             echo
 
-            if [[ -z "${CF_ACCOUNT_ID_INPUT}" || -z "${CF_TOKEN_INPUT}" ]]; then
-                echo "错误：Cloudflare Account ID 和 API Token 不能为空。"
+            if [[ -z "${CF_TOKEN_INPUT}" ]]; then
+                echo "错误：Cloudflare API Token 不能为空。"
                 exit 1
             fi
 
-            export CF_Account_ID="${CF_ACCOUNT_ID_INPUT}"
             export CF_Token="${CF_TOKEN_INPUT}"
-            unset CF_Key CF_Email 2>/dev/null || true
+            unset CF_Account_ID CF_Zone_ID CF_Key CF_Email 2>/dev/null || true
             ;;
         2)
             read -rp "请输入 Cloudflare 登录邮箱：" CF_EMAIL_INPUT
@@ -160,7 +157,6 @@ echo "Cloudflare 凭据方式："
     set -e
 fi
 
-# acme.sh 在证书仍有效、无需重新签发时可能返回 2，此时仍尝试安装已有证书。
 if [[ "${ACME_RC}" -ne 0 && "${ACME_RC}" -ne 2 ]]; then
     echo "错误：SSL 证书申请失败。"
     if [[ "${VERIFY_METHOD}" == "1" ]]; then
