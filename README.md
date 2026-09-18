@@ -904,3 +904,283 @@ SSL 证书目录：
 
 至此，KomariX 全新安装完成。
 
+---
+
+# KomariX 数据备份与恢复
+
+如果以后需要重装 VPS、迁移服务器，或者在升级前做完整备份，建议直接备份整个 KomariX `data` 目录，而不是只备份单个数据库文件。
+
+KomariX 默认数据目录：
+
+```text
+/opt/komarix/data
+```
+
+其中主要包括：
+
+```text
+komarix.db
+metrics.db
+```
+
+`komarix.db` 主要保存：
+
+```text
+管理员账号
+已添加的监控机器
+机器名称
+UUID
+Token
+分组
+备注
+站点配置
+Ping 任务
+通知配置
+主题和插件相关配置
+```
+
+`metrics.db` 主要保存：
+
+```text
+CPU 历史监控数据
+内存历史监控数据
+磁盘历史监控数据
+流量历史监控数据
+Ping 历史监控数据
+其他历史指标数据
+```
+
+因此推荐直接完整备份：
+
+```text
+/opt/komarix/data
+```
+
+这样恢复后可以最大程度保留原来的 KomariX 状态。
+
+## 重装 VPS 或迁移前：完整备份 KomariX
+
+先停止 KomariX：
+
+```bash
+systemctl stop komarix
+```
+
+确认数据目录存在：
+
+```bash
+ls -lah /opt/komarix/data
+```
+
+然后完整打包：
+
+```bash
+tar -C /opt/komarix -czf /root/komarix-data-backup.tar.gz data
+```
+
+备份完成后重新启动 KomariX：
+
+```bash
+systemctl start komarix
+```
+
+备份文件位于：
+
+```text
+/root/komarix-data-backup.tar.gz
+```
+
+可以检查：
+
+```bash
+ls -lh /root/komarix-data-backup.tar.gz
+```
+
+建议在重装系统之前，把：
+
+```text
+/root/komarix-data-backup.tar.gz
+```
+
+下载到自己的电脑或其他安全位置保存。
+
+> 如果准备执行 DD 重装系统，必须先把备份文件下载到服务器之外。系统重装后，原 VPS 上的文件通常都会被清空。
+
+---
+
+## 重装 VPS 后：恢复 KomariX
+
+先按照上面的 **KomariX 全新安装流程** 安装好 KomariX。
+
+安装完成后先停止服务：
+
+```bash
+systemctl stop komarix
+```
+
+把之前保存的：
+
+```text
+komarix-data-backup.tar.gz
+```
+
+上传到：
+
+```text
+/root/komarix-data-backup.tar.gz
+```
+
+然后执行：
+
+```bash
+systemctl stop komarix
+
+mkdir -p /opt/komarix
+
+rm -rf /opt/komarix/data
+
+tar -C /opt/komarix -xzf /root/komarix-data-backup.tar.gz
+
+chmod 644 /opt/komarix/data/komarix.db
+
+systemctl start komarix
+```
+
+恢复完成后检查服务：
+
+```bash
+systemctl status komarix --no-pager
+```
+
+查看最近日志：
+
+```bash
+journalctl -u komarix -n 100 --no-pager
+```
+
+如果服务正常启动，打开原来的 KomariX 域名检查：
+
+```text
+管理员账号是否可以正常登录
+原来的监控机器是否全部存在
+机器名称是否正常
+UUID / Token 是否保留
+Agent 是否重新上线
+历史 CPU / 内存 / 流量 / Ping 曲线是否存在
+Ping 任务是否正常
+通知配置是否正常
+主题及其他配置是否正常
+```
+
+如果域名、端口和 Agent 配置没有改变，并且 UUID、Token 已成功恢复，原来的 Agent 通常不需要重新安装。
+
+---
+
+## 只恢复主数据库
+
+如果只想恢复机器、UUID、Token 和面板配置，不需要历史监控曲线，也可以只备份：
+
+```text
+/opt/komarix/data/komarix.db
+```
+
+备份：
+
+```bash
+systemctl stop komarix
+
+cp /opt/komarix/data/komarix.db /root/komarix.db
+
+systemctl start komarix
+```
+
+恢复：
+
+```bash
+systemctl stop komarix
+
+cp /root/komarix.db /opt/komarix/data/komarix.db
+
+chmod 644 /opt/komarix/data/komarix.db
+
+systemctl start komarix
+```
+
+这种方式不会恢复：
+
+```text
+metrics.db 中的历史监控曲线
+```
+
+因此普通情况下更推荐使用完整 `data` 目录备份。
+
+---
+
+## 恢复后如果 KomariX 无法启动
+
+先查看日志：
+
+```bash
+journalctl -u komarix -n 200 --no-pager
+```
+
+检查文件：
+
+```bash
+ls -lah /opt/komarix/data
+```
+
+确认至少存在：
+
+```text
+/opt/komarix/data/komarix.db
+```
+
+然后重新设置主数据库权限：
+
+```bash
+chmod 644 /opt/komarix/data/komarix.db
+```
+
+再尝试：
+
+```bash
+systemctl restart komarix
+```
+
+如果备份来自较旧版本的 KomariX，首次启动时可能会自动执行数据库结构迁移。
+
+迁移过程中不要强制关闭服务。
+
+---
+
+## 建议的备份方式
+
+日常使用时，最推荐保存：
+
+```text
+/root/komarix-data-backup.tar.gz
+```
+
+它包含完整的：
+
+```text
+/opt/komarix/data
+```
+
+需要重装系统或迁移服务器时，只需要：
+
+```text
+安装 KomariX
+↓
+停止 KomariX
+↓
+恢复 data 目录
+↓
+启动 KomariX
+↓
+检查机器和历史监控数据
+```
+
+即可完成恢复。
+
