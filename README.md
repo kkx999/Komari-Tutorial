@@ -524,3 +524,383 @@ KomariX 默认历史监控数据库：
 
 建议确认 KomariX 中所有机器、历史数据和通知功能均正常后，再清理旧 Komari 数据。
 
+---
+
+# KomariX 全新安装流程
+
+如果是全新的 VPS，不需要从 Komari 迁移数据，可以直接按照下面的流程部署 KomariX。
+
+## 第一步：安装 KomariX
+
+执行：
+
+```bash
+cd /root && curl -fsSL https://raw.githubusercontent.com/kkx999/KomariX/main/install-komarix.sh -o install-komarix.sh && chmod +x install-komarix.sh && ./install-komarix.sh
+```
+
+进入安装菜单后选择：
+
+```text
+1. 安装 KomariX
+```
+
+然后选择发布通道：
+
+```text
+stable
+```
+
+推荐普通用户使用稳定版。
+
+KomariX 默认监听端口：
+
+```text
+25774
+```
+
+如果没有特殊需求，可以直接使用默认端口。
+
+安装完成后，检查服务状态：
+
+```bash
+systemctl status komarix --no-pager
+```
+
+如果看到：
+
+```text
+active (running)
+```
+
+说明 KomariX 已经正常运行。
+
+也可以查看日志：
+
+```bash
+journalctl -u komarix -n 100 --no-pager
+```
+
+---
+
+## 第二步：先通过 IP + 端口测试
+
+假设服务器公网 IP 为：
+
+```text
+1.2.3.4
+```
+
+默认端口为：
+
+```text
+25774
+```
+
+浏览器访问：
+
+```text
+http://1.2.3.4:25774
+```
+
+首次访问会进入 KomariX 初始化页面。
+
+按照页面提示创建管理员账号并完成初始化。
+
+如果 IP + 端口可以正常访问，再继续配置域名和 HTTPS。
+
+---
+
+## 第三步：安装 Nginx
+
+执行：
+
+```bash
+apt update && apt install -y nginx curl cron && systemctl enable --now nginx cron
+```
+
+检查 Nginx：
+
+```bash
+systemctl status nginx --no-pager
+```
+
+---
+
+## 第四步：解析域名
+
+在自己的 DNS 服务商中，把准备给 KomariX 使用的域名解析到当前 VPS 公网 IP。
+
+例如：
+
+```text
+monitor.example.com
+```
+
+添加：
+
+```text
+A    monitor    VPS公网IPv4
+```
+
+如果服务器同时使用 IPv6，也可以增加：
+
+```text
+AAAA    monitor    VPS公网IPv6
+```
+
+等待 DNS 生效后再继续。
+
+---
+
+## 第五步：配置 Nginx 反向代理
+
+创建 KomariX 的 Nginx 配置：
+
+```bash
+cat > /etc/nginx/conf.d/komarix.conf <<'EOF'
+server {
+    listen 80;
+    server_name 你的KomariX域名;
+
+    location / {
+        proxy_pass http://127.0.0.1:25774;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_read_timeout 3600;
+        proxy_send_timeout 3600;
+    }
+}
+EOF
+```
+
+把：
+
+```text
+你的KomariX域名
+```
+
+替换成自己的真实域名。
+
+例如：
+
+```text
+monitor.example.com
+```
+
+然后检查配置：
+
+```bash
+nginx -t
+```
+
+如果显示：
+
+```text
+syntax is ok
+test is successful
+```
+
+执行：
+
+```bash
+systemctl reload nginx
+```
+
+此时可以先访问：
+
+```text
+http://你的KomariX域名
+```
+
+确认反向代理正常。
+
+---
+
+## 第六步：申请 HTTPS 证书
+
+推荐使用 acme.sh。
+
+安装：
+
+```bash
+curl https://get.acme.sh | sh -s email=你的邮箱
+```
+
+让当前终端加载 acme.sh：
+
+```bash
+source ~/.bashrc
+```
+
+### HTTP 验证方式
+
+如果服务器公网 80 端口可以正常访问，可以执行：
+
+```bash
+~/.acme.sh/acme.sh --issue --nginx -d 你的KomariX域名 --server letsencrypt
+```
+
+创建证书目录：
+
+```bash
+mkdir -p /etc/nginx/ssl/komarix
+```
+
+安装证书：
+
+```bash
+~/.acme.sh/acme.sh --install-cert -d 你的KomariX域名 \
+  --key-file /etc/nginx/ssl/komarix/key.pem \
+  --fullchain-file /etc/nginx/ssl/komarix/fullchain.pem \
+  --reloadcmd "systemctl reload nginx"
+```
+
+---
+
+## 第七步：开启 HTTPS
+
+修改：
+
+```text
+/etc/nginx/conf.d/komarix.conf
+```
+
+内容改为：
+
+```nginx
+server {
+    listen 80;
+    server_name 你的KomariX域名;
+
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name 你的KomariX域名;
+
+    ssl_certificate /etc/nginx/ssl/komarix/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/komarix/key.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:25774;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_read_timeout 3600;
+        proxy_send_timeout 3600;
+    }
+}
+```
+
+检查 Nginx：
+
+```bash
+nginx -t
+```
+
+然后重新加载：
+
+```bash
+systemctl reload nginx
+```
+
+---
+
+## 第八步：访问 KomariX
+
+浏览器打开：
+
+```text
+https://你的KomariX域名
+```
+
+如果可以正常进入 KomariX，即代表部署完成。
+
+---
+
+## 常用 KomariX 服务管理命令
+
+查看状态：
+
+```bash
+systemctl status komarix
+```
+
+启动：
+
+```bash
+systemctl start komarix
+```
+
+停止：
+
+```bash
+systemctl stop komarix
+```
+
+重启：
+
+```bash
+systemctl restart komarix
+```
+
+实时日志：
+
+```bash
+journalctl -u komarix -f
+```
+
+查看最近日志：
+
+```bash
+journalctl -u komarix -n 100 --no-pager
+```
+
+KomariX 默认程序目录：
+
+```text
+/opt/komarix
+```
+
+KomariX 默认主数据库：
+
+```text
+/opt/komarix/data/komarix.db
+```
+
+KomariX 默认历史监控数据库：
+
+```text
+/opt/komarix/data/metrics.db
+```
+
+Nginx 配置：
+
+```text
+/etc/nginx/conf.d/komarix.conf
+```
+
+SSL 证书目录：
+
+```text
+/etc/nginx/ssl/komarix
+```
+
+至此，KomariX 全新安装完成。
+
