@@ -234,3 +234,293 @@ systemctl status komari
 ```
 
 如果服务正常启动，之前已经添加的监控机器会重新出现在 Komari 中，通常无需重新安装 Agent 或重新添加机器。
+
+---
+
+# 从 Komari 迁移到 KomariX
+
+如果当前已经部署了 Komari，并且希望迁移到 KomariX，同时保留已经添加的监控机器、机器名称、UUID、Token、站点配置以及历史监控数据，可以按照下面的方法迁移。
+
+KomariX 对 Komari 的现有数据库结构保留了兼容迁移逻辑。
+
+默认情况下：
+
+Komari 主数据库：
+
+```text
+/opt/komari/data/komari.db
+```
+
+KomariX 主数据库：
+
+```text
+/opt/komarix/data/komarix.db
+```
+
+历史监控指标数据库默认都是：
+
+```text
+data/metrics.db
+```
+
+因此迁移时除了需要把 Komari 的 `komari.db` 改为 KomariX 使用的 `komarix.db`，还建议把整个 Komari `data` 目录一起保留下来。
+
+> 建议迁移完成并确认所有机器正常上线之前，不要删除原来的 `/opt/komari` 目录。这样如果迁移出现问题，可以随时切回原 Komari。
+
+## 第一步：停止 Komari 并完整备份数据
+
+先停止 Komari：
+
+```bash
+systemctl stop komari
+systemctl disable komari
+```
+
+确认旧主数据库存在：
+
+```bash
+ls -lh /opt/komari/data/komari.db
+```
+
+然后完整备份 Komari 的数据目录：
+
+```bash
+tar -C /opt/komari -czf /root/komari-data-before-komarix.tar.gz data
+```
+
+备份文件位于：
+
+```text
+/root/komari-data-before-komarix.tar.gz
+```
+
+建议在继续操作之前，把这个压缩包另外下载到本地电脑保存一份。
+
+---
+
+## 第二步：安装 KomariX
+
+执行 KomariX 官方安装脚本：
+
+```bash
+cd /root && curl -fsSL https://raw.githubusercontent.com/kkx999/KomariX/main/install-komarix.sh -o install-komarix.sh && chmod +x install-komarix.sh && ./install-komarix.sh
+```
+
+选择：
+
+```text
+1. 安装 KomariX
+```
+
+如果原来的 Komari 使用默认端口：
+
+```text
+25774
+```
+
+KomariX 也继续使用：
+
+```text
+25774
+```
+
+这样原来的 Nginx 反向代理和域名通常不需要修改。
+
+安装完成后先停止 KomariX：
+
+```bash
+systemctl stop komarix
+```
+
+---
+
+## 第三步：把 Komari 数据迁移到 KomariX
+
+先确认原来的 Komari 主数据库仍然存在：
+
+```bash
+test -f /opt/komari/data/komari.db && echo "Komari 数据库存在"
+```
+
+然后执行：
+
+```bash
+systemctl stop komarix
+
+mkdir -p /opt/komarix/data
+
+rm -rf /opt/komarix/data/*
+
+cp -a /opt/komari/data/. /opt/komarix/data/
+
+mv /opt/komarix/data/komari.db /opt/komarix/data/komarix.db
+
+chmod 644 /opt/komarix/data/komarix.db
+
+systemctl start komarix
+```
+
+这里会把原 Komari 的整个 `data` 目录复制到 KomariX。
+
+其中：
+
+```text
+komari.db
+```
+
+会改名为：
+
+```text
+komarix.db
+```
+
+如果原 Komari 使用默认 SQLite 指标数据库：
+
+```text
+metrics.db
+```
+
+它会一起被复制到 KomariX，因此历史 CPU、内存、流量、Ping 等监控数据也可以继续保留。
+
+如果原 Komari 的指标数据库使用的是 MySQL 或 PostgreSQL，而不是本地 `metrics.db`，主数据库中的连接配置也会一并迁移，但需要确保 KomariX 服务器仍然可以连接原来的远程数据库。
+
+---
+
+## 第四步：让 KomariX 自动执行兼容迁移
+
+启动 KomariX 后检查服务状态：
+
+```bash
+systemctl status komarix --no-pager
+```
+
+查看最近日志：
+
+```bash
+journalctl -u komarix -n 100 --no-pager
+```
+
+KomariX 启动时会自动检查旧数据库结构，并执行兼容迁移。
+
+如果浏览器中出现数据库迁移页面，请按照页面提示完成迁移。
+
+迁移过程中不要强制关闭 KomariX，也不要删除旧 Komari 数据。
+
+---
+
+## 第五步：检查迁移结果
+
+打开原来的监控域名：
+
+```text
+https://你的Komari域名
+```
+
+重点检查：
+
+```text
+管理员账号是否可以正常登录
+原来的监控机器是否全部存在
+机器名称是否正确
+UUID / Token 是否保留
+机器是否重新上线
+分组、备注等信息是否正常
+Ping 任务是否正常
+历史监控曲线是否存在
+通知配置是否正常
+```
+
+如果原来的域名和端口都没有改变，并且 UUID、Token 已经成功迁移，原来的 Agent 通常不需要重新安装，也不需要重新添加机器。
+
+---
+
+## 第六步：确认 Nginx 和 HTTPS
+
+如果迁移前后继续使用相同域名和相同端口：
+
+```text
+25774
+```
+
+原来的 Nginx 配置：
+
+```text
+/etc/nginx/conf.d/komari.conf
+```
+
+以及原来的 SSL 证书：
+
+```text
+/etc/nginx/ssl/komari
+```
+
+通常都可以继续使用，不需要重新申请证书。
+
+可以检查：
+
+```bash
+nginx -t && systemctl reload nginx
+```
+
+---
+
+# 迁移失败时回退到 Komari
+
+因为整个迁移过程没有删除原来的 `/opt/komari`，所以如果 KomariX 迁移后出现异常，可以快速切回原来的 Komari。
+
+执行：
+
+```bash
+systemctl stop komarix
+systemctl disable komarix
+
+systemctl enable komari
+systemctl start komari
+```
+
+然后检查：
+
+```bash
+systemctl status komari --no-pager
+```
+
+如果原来的 Nginx 仍然代理到相同的 `25774` 端口，域名会重新访问原来的 Komari。
+
+确认 KomariX 长时间运行正常之后，再决定是否删除旧的 Komari 文件。
+
+---
+
+# 迁移完成后的目录
+
+原 Komari 建议暂时保留：
+
+```text
+/opt/komari
+```
+
+新的 KomariX：
+
+```text
+/opt/komarix
+```
+
+KomariX 主数据库：
+
+```text
+/opt/komarix/data/komarix.db
+```
+
+KomariX 默认历史监控数据库：
+
+```text
+/opt/komarix/data/metrics.db
+```
+
+迁移前的完整备份：
+
+```text
+/root/komari-data-before-komarix.tar.gz
+```
+
+建议确认 KomariX 中所有机器、历史数据和通知功能均正常后，再清理旧 Komari 数据。
+
