@@ -528,7 +528,7 @@ KomariX 默认历史监控数据库：
 
 # KomariX 全新安装流程
 
-如果是全新的 VPS，不需要从 Komari 迁移数据，可以直接按照下面的流程部署 KomariX。
+如果是全新的 VPS，直接按照下面 4 步安装即可。
 
 ## 第一步：一键安装 KomariX
 
@@ -538,39 +538,23 @@ KomariX 默认历史监控数据库：
 cd /root && curl -fsSL https://raw.githubusercontent.com/kkx999/KomariX/main/install-komarix.sh -o install-komarix.sh && chmod +x install-komarix.sh && ./install-komarix.sh
 ```
 
-进入菜单后选择：
+菜单选择：
 
 ```text
 1. 安装 KomariX
 ```
 
-发布通道推荐选择：
+发布通道推荐：
 
 ```text
 stable
 ```
 
-KomariX 默认端口：
+端口没有特殊需求就使用默认：
 
 ```text
 25774
 ```
-
-如果没有特殊需求，直接使用默认端口即可。
-
-安装完成后可以检查：
-
-```bash
-systemctl status komarix --no-pager
-```
-
-如果显示：
-
-```text
-active (running)
-```
-
-说明 KomariX 已正常运行。
 
 ---
 
@@ -584,9 +568,9 @@ apt update && apt install -y nginx curl cron && systemctl enable --now nginx cro
 
 ---
 
-## 第三步：一键配置域名 + SSL + HTTPS
+## 第三步：一键配置域名 + HTTPS
 
-先把自己的 KomariX 域名解析到当前 VPS 公网 IP。
+先把自己的域名解析到当前 VPS 公网 IP。
 
 然后执行：
 
@@ -594,134 +578,36 @@ apt update && apt install -y nginx curl cron && systemctl enable --now nginx cro
 bash <(curl -fsSL https://raw.githubusercontent.com/kkx999/Komari-Tutorial/main/setup-komarix-https.sh)
 ```
 
-脚本首先需要输入：
+按照脚本提示输入：
 
 ```text
 KomariX 域名
-用于申请 SSL 证书的邮箱
+申请 SSL 证书的邮箱
 ```
 
-然后可以选择两种证书验证方式：
+证书验证方式可以选择：
 
 ```text
 1. HTTP 验证
 2. Cloudflare DNS 验证
 ```
 
-### 方式一：HTTP 验证
-
-适合 VPS 的公网 80 端口可以正常访问的情况。
-
-选择：
-
-```text
-1. HTTP 验证（需要公网 80 端口可访问）
-```
-
-脚本会使用 acme.sh 的 Nginx HTTP 验证方式自动申请 Let's Encrypt 证书。
-
-要求：
-
-```text
-域名已经解析到当前 VPS
-TCP 80 可以从公网访问
-TCP 443 用于最终 HTTPS 访问
-```
-
-### 方式二：Cloudflare DNS 验证
-
-如果域名 DNS 托管在 Cloudflare，可以选择：
-
-```text
-2. Cloudflare DNS 验证（不需要开放 80 端口）
-```
-
-这种方式通过 Cloudflare DNS API 自动创建 `_acme-challenge` TXT 记录完成验证，申请证书时不需要公网开放 80 端口。
-
-Cloudflare 凭据支持：
+如果选择 Cloudflare DNS 验证，还可以继续选择：
 
 ```text
 1. API Token（推荐）
 2. Global API Key
 ```
 
-#### Cloudflare API Token
-
-只需要输入：
+脚本会自动完成：
 
 ```text
-Cloudflare API Token
-```
-
-不需要手动填写 Account ID。
-
-建议 Token 权限：
-
-```text
-Zone → DNS → Edit
-Zone → Zone → Read
-```
-
-Zone Resources 建议限制为：
-
-```text
-Include → Specific zone → 你的域名
-```
-
-输入 Token 时终端不会显示内容。
-
-#### Cloudflare Global API Key
-
-也支持传统 Global API Key。
-
-需要输入：
-
-```text
-Cloudflare 登录邮箱
-Cloudflare Global API Key
-```
-
-Global API Key 权限较大，普通情况下优先推荐 API Token。
-
-Cloudflare 凭据会由 acme.sh 保存，用于以后自动续期证书，请注意保护：
-
-```text
-/root/.acme.sh/
-```
-
-### 一键脚本会自动完成
-
-```text
-创建 KomariX Nginx 反向代理
-安装或检查 acme.sh
-选择 HTTP 或 Cloudflare DNS 验证
-支持 Cloudflare API Token
-支持 Cloudflare Global API Key
-申请 Let's Encrypt SSL 证书
-安装 SSL 证书
-开启 HTTPS
+Nginx 反向代理
+SSL 证书申请
+HTTPS 配置
 HTTP 自动跳转 HTTPS
-配置 WebSocket 反向代理
-重新加载 Nginx
-配置 acme.sh 自动续期
-```
-
-KomariX Nginx 配置：
-
-```text
-/etc/nginx/conf.d/komarix.conf
-```
-
-SSL 证书目录：
-
-```text
-/etc/nginx/ssl/komarix
-```
-
-脚本不会修改：
-
-```text
-/etc/nginx/nginx.conf
+WebSocket 配置
+证书自动续期
 ```
 
 ---
@@ -734,58 +620,22 @@ SSL 证书目录：
 https://你的KomariX域名
 ```
 
-首次访问按照页面提示完成管理员初始化即可。
+首次访问按照页面提示创建管理员账号即可。
 
----
-
-## KomariX 常用服务管理命令
-
-查看状态：
+KomariX 常用命令：
 
 ```bash
 systemctl status komarix
-```
-
-启动：
-
-```bash
-systemctl start komarix
-```
-
-停止：
-
-```bash
-systemctl stop komarix
-```
-
-重启：
-
-```bash
 systemctl restart komarix
-```
-
-实时日志：
-
-```bash
 journalctl -u komarix -f
 ```
 
-默认程序目录：
+默认目录：
 
 ```text
-/opt/komarix
-```
-
-默认主数据库：
-
-```text
-/opt/komarix/data/komarix.db
-```
-
-默认历史监控数据库：
-
-```text
-/opt/komarix/data/metrics.db
+程序目录：/opt/komarix
+主数据库：/opt/komarix/data/komarix.db
+历史监控数据库：/opt/komarix/data/metrics.db
 ```
 
 至此，KomariX 全新安装完成。
