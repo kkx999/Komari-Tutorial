@@ -350,6 +350,34 @@ systemctl start komari
 
 ---
 
+## 第五步：确认无误后删除旧 Komari
+
+确认 KomariX 已经正常运行、所有机器都在线、历史监控数据也正常后，就可以删除旧 Komari。
+
+执行：
+
+```bash
+systemctl stop komari 2>/dev/null || true
+systemctl disable komari 2>/dev/null || true
+rm -f /etc/systemd/system/komari.service
+systemctl daemon-reload
+systemctl reset-failed
+rm -rf /opt/komari
+rm -f /root/install-komari.sh
+```
+
+如果迁移前的备份已经下载到本地并确认不再需要服务器上的副本，也可以删除：
+
+```bash
+rm -f /root/komari-data-before-komarix.tar.gz
+```
+
+> 不要删除原来的 Nginx 配置和 SSL 证书。只要迁移后仍然使用相同域名和 `25774` 端口，它们仍然负责把域名转发到 KomariX。
+
+执行完成后，服务器上就只保留 KomariX。
+
+---
+
 # KomariX 全新安装流程
 
 如果是全新的 VPS，直接按照下面 4 步安装即可。
