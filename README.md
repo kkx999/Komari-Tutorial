@@ -81,9 +81,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/kkx999/Komari-Tutorial/main/
 3. 下载对应 Linux 程序
 4. 创建或更新 `komari.service`
 5. 保留现有 `/opt/komari` 数据目录
-6. 已存在旧程序时自动备份程序和 systemd 配置
-7. 启动失败时尽量回滚到原程序
-8. 保留原数据库和监控数据
+6. 已存在旧程序时自动备份程序、systemd 配置和主数据库 `komari.db`
+7. 启动失败时自动恢复旧程序、旧服务配置和主数据库
+8. 保留现有 `/opt/komari/data` 数据目录
 
 支持的架构：
 
@@ -95,7 +95,7 @@ riscv64
 loong64
 ```
 
-> 输入的版本必须是 Komari GitHub Releases 中真实存在的 Tag。
+> 输入的版本必须是 Komari GitHub Releases 中真实存在的 Tag。\n>\n> 如果从较新版本降级到较旧版本，建议在执行前另外完整备份 `/opt/komari/data`，因为不同版本之间的数据库结构不保证向下兼容。
 
 ---
 
