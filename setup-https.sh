@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KOMARI_PORT="25774"
+DEFAULT_KOMARI_PORT="25774"
 NGINX_CONF="/etc/nginx/conf.d/komari.conf"
 SSL_DIR="/etc/nginx/ssl/komari"
 ACME_SH="/root/.acme.sh/acme.sh"
@@ -15,6 +15,40 @@ if ! command -v nginx >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
     echo "错误：未检测到 Nginx 或 curl。"
     echo "请先执行教程第二步安装 Nginx、curl 和 cron。"
     exit 1
+fi
+
+detect_komari_port() {
+    local exec_start=""
+    local port=""
+
+    if command -v systemctl >/dev/null 2>&1; then
+        exec_start="$(systemctl show -p ExecStart --value komari.service 2>/dev/null || true)"
+    fi
+
+    if [[ -z "${exec_start}" && -f /etc/systemd/system/komari.service ]]; then
+        exec_start="$(grep -E '^ExecStart=' /etc/systemd/system/komari.service | tail -n1 | cut -d= -f2- || true)"
+    fi
+
+    port="$(printf '%s\n' "${exec_start}" | sed -nE 's/.*-l[[:space:]]+[^[:space:]]*:([0-9]{1,5}).*/\1/p' | tail -n1)"
+
+    if [[ "${port}" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )); then
+        printf '%s\n' "${port}"
+    else
+        printf '%s\n' "${DEFAULT_KOMARI_PORT}"
+    fi
+}
+
+KOMARI_PORT="$(detect_komari_port)"
+
+if [[ "${KOMARI_PORT}" == "${DEFAULT_KOMARI_PORT}" ]]; then
+    echo "检测到 Komari 端口：${KOMARI_PORT}（如未能读取服务配置则使用默认值）"
+else
+    echo "自动检测到 Komari 监听端口：${KOMARI_PORT}"
+fi
+
+if ! curl -fsS --max-time 5 "http://127.0.0.1:${KOMARI_PORT}/" >/dev/null 2>&1; then
+    echo "警告：暂时无法通过 127.0.0.1:${KOMARI_PORT} 访问 Komari。"
+    echo "请确认 Komari 已启动且监听端口正确。脚本仍可继续配置 Nginx。"
 fi
 
 read -rp "请输入 Komari 域名（例如 monitor.example.com）: " DOMAIN
@@ -42,12 +76,8 @@ echo "2. Cloudflare DNS 验证（不需要开放 80 端口）"
 read -rp "请选择 [1-2]：" VERIFY_METHOD
 
 case "${VERIFY_METHOD}" in
-    1)
-        VERIFY_NAME="HTTP"
-        ;;
-    2)
-        VERIFY_NAME="Cloudflare DNS"
-        ;;
+    1) VERIFY_NAME="HTTP" ;;
+    2) VERIFY_NAME="Cloudflare DNS" ;;
     *)
         echo "错误：请选择 1 或 2。"
         exit 1
@@ -219,6 +249,7 @@ systemctl reload nginx
 echo
 echo "=============================================="
 echo "Komari 域名和 HTTPS 配置完成"
+echo "Komari 端口：${KOMARI_PORT}"
 echo "验证方式：${VERIFY_NAME}"
 echo "访问地址：https://${DOMAIN}"
 echo "SSL 证书将由 acme.sh 自动续期"
