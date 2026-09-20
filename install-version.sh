@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO="komari-monitor/komari"
 INSTALL_DIR="/opt/komari"
+DATA_DIR="${INSTALL_DIR}/data"
 BINARY_PATH="${INSTALL_DIR}/komari"
 SERVICE_FILE="/etc/systemd/system/komari.service"
 SERVICE_NAME="komari"
@@ -106,6 +107,8 @@ echo "  架构：${ARCH}"
 echo "  端口：${PORT}"
 echo "  目录：${INSTALL_DIR}"
 echo
+echo "提示：如果是从较新版本降级到较旧版本，建议另外完整备份 ${DATA_DIR}。"
+echo
 
 if ! curl -fsSL --connect-timeout 10 --max-time 30 "${RELEASE_API}" -o /dev/null; then
     echo "错误：未找到 Release Tag：${VERSION}"
@@ -114,7 +117,8 @@ if ! curl -fsSL --connect-timeout 10 --max-time 30 "${RELEASE_API}" -o /dev/null
 fi
 
 TMP_BINARY="$(mktemp)"
-trap 'rm -f "${TMP_BINARY}"' EXIT
+TMP_SERVICE="$(mktemp)"
+trap 'rm -f "${TMP_BINARY}" "${TMP_SERVICE}"' EXIT
 
 echo "[1/4] 下载 Komari ${VERSION}..."
 if ! curl -fL --retry 2 --connect-timeout 10 --max-time 300 "${DOWNLOAD_URL}" -o "${TMP_BINARY}"; then
@@ -128,9 +132,26 @@ if [[ ! -s "${TMP_BINARY}" ]]; then
 fi
 chmod +x "${TMP_BINARY}"
 
+cat > "${TMP_SERVICE}" <<EOF
+[Unit]
+Description=Komari Monitor Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${BINARY_PATH} server -l 0.0.0.0:${PORT}
+WorkingDirectory=${INSTALL_DIR}
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 BINARY_BACKUP=""
 SERVICE_BACKUP=""
+DB_BACKUP=""
 WAS_ACTIVE=0
 
 if systemctl is-active --quiet "${SERVICE_NAME}.service" 2>/dev/null; then
@@ -155,6 +176,12 @@ if [[ -f "${SERVICE_FILE}" ]]; then
     echo "已备份当前服务配置：${SERVICE_BACKUP}"
 fi
 
+if [[ -f "${DATA_DIR}/komari.db" ]]; then
+    DB_BACKUP="${DATA_DIR}/komari.db.backup.${TIMESTAMP}"
+    cp -a "${DATA_DIR}/komari.db" "${DB_BACKUP}"
+    echo "已备份主数据库：${DB_BACKUP}"
+fi
+
 rollback() {
     echo
     echo "安装未成功，正在恢复原版本..."
@@ -171,6 +198,10 @@ rollback() {
         rm -f "${SERVICE_FILE}"
     fi
 
+    if [[ -n "${DB_BACKUP}" && -f "${DB_BACKUP}" ]]; then
+        cp -a "${DB_BACKUP}" "${DATA_DIR}/komari.db"
+    fi
+
     systemctl daemon-reload || true
     if [[ "${WAS_ACTIVE}" -eq 1 ]]; then
         systemctl start "${SERVICE_NAME}.service" || true
@@ -183,24 +214,20 @@ if ! install -m 0755 "${TMP_BINARY}" "${BINARY_PATH}"; then
     exit 1
 fi
 
-cat > "${SERVICE_FILE}" <<EOF
-[Unit]
-Description=Komari Monitor Service
-After=network.target
+if ! install -m 0644 "${TMP_SERVICE}" "${SERVICE_FILE}"; then
+    rollback
+    exit 1
+fi
 
-[Service]
-Type=simple
-ExecStart=${BINARY_PATH} server -l 0.0.0.0:${PORT}
-WorkingDirectory=${INSTALL_DIR}
-Restart=always
-User=root
+if ! systemctl daemon-reload; then
+    rollback
+    exit 1
+fi
 
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable "${SERVICE_NAME}.service" >/dev/null
+if ! systemctl enable "${SERVICE_NAME}.service" >/dev/null; then
+    rollback
+    exit 1
+fi
 
 echo "[4/4] 启动 Komari..."
 if ! systemctl restart "${SERVICE_NAME}.service"; then
@@ -228,5 +255,8 @@ echo "服务状态：systemctl status komari"
 echo "实时日志：journalctl -u komari -f"
 if [[ -n "${BINARY_BACKUP}" ]]; then
     echo "旧程序备份：${BINARY_BACKUP}"
+fi
+if [[ -n "${DB_BACKUP}" ]]; then
+    echo "主数据库备份：${DB_BACKUP}"
 fi
 echo "=============================================="
